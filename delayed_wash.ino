@@ -1,13 +1,13 @@
 #include <avr/sleep.h>
 #include <avr/wdt.h>
-#include <avr/power.h>>
+#include <avr/power.h>
+#include <SoftwareSerial.h>
 
 static const byte button = 2;
 static const byte warn_led = 13;
 
 // changed in interrupt routines
-static volatile bool error = false;
-static volatile bool run_program = false;
+bool error = false;
 
 void blink_warn_led(void)
 {
@@ -29,15 +29,33 @@ ISR (WDT_vect)
 /* Just delay work to main loop */
 void run_program_impl(void)
 {
-  wdt_disable();
-  run_program = true;
 }
 
+
+void go_idle()
+{
+  noInterrupts ();   // timed sequence below
+  MCUSR = 0;                          // reset various flags
+  byte adcsra_save = ADCSRA;
+  ADCSRA = 0;  // disable ADC
+  power_all_disable ();   // turn off all modules
+  set_sleep_mode (SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
+  sleep_enable();
+  attachInterrupt(0, run_program_impl, FALLING);
+  EIFR |= (1 << INTF0); //clear this interrupt
+  interrupts ();
+
+  sleep_cpu ();            // now goes to Sleep and waits for the interrupt
+  detachInterrupt (0);
+
+  ADCSRA = adcsra_save;  // stop power reduction
+  power_all_enable ();   // turn on all modules
+
+}
 
 void set_idle_watchdog(void (*intr_routine)(void))
 {
   noInterrupts ();   // timed sequence below
-
   MCUSR = 0;                          // reset various flags
   WDTCSR |= 0b00011000;               // see docs, set WDCE, WDE
   WDTCSR =  0b01000000 | 0b100001;    // set WDIE, set delay 8 secs
@@ -50,23 +68,23 @@ void set_idle_watchdog(void (*intr_routine)(void))
   sleep_enable();
 
   if (intr_routine != NULL) {
-    attachInterrupt(0, intr_routine, LOW);
+    attachInterrupt(0, intr_routine, FALLING);
+    EIFR |= (1 << INTF0);
   }
-
   interrupts ();
-
   sleep_cpu ();            // now goes to Sleep and waits for the interrupt
-
   detachInterrupt (0);
+
   ADCSRA = adcsra_save;  // stop power reduction
   power_all_enable ();   // turn on all modules
 }
 
 
 void setup() {
+  Serial.begin(9600);
   pinMode (warn_led, OUTPUT);
   pinMode (button, INPUT);
-  digitalWrite(2, HIGH);
+  digitalWrite(button, HIGH);
 
   /* initialize RTC here */
   if (!false) {
@@ -76,6 +94,7 @@ void setup() {
 }
 
 void loop() {
+
   /* Unable to detect RTC or
      other error - like RTC stop work
    */
@@ -85,37 +104,23 @@ void loop() {
     return;
   }
 
-  set_idle_watchdog(&run_program_impl);
-  if (run_program) {
-    // now wait for another button press without blocking
-    unsigned long currentMillis = millis();
-    // Wait for 5 seconds
-    unsigned long futureMilis = currentMillis + 5000;
-    int second_click;
-    do {
-      second_click = digitalRead(button);
-      if ((second_click == HIGH)
-          || (futureMilis - currentMillis <= 0))
-      {
-        break;
-      }
-    } while (true);
+  go_idle();
 
-    // skip timecheck if second_click == HIGH
+  // Wait for 5 seconds
+  unsigned long futureMilis = millis() + (1000 * 5);
 
-    /* check time and date
-     if (date is weekend) {
-      if (hour >= 16 && minutes >= 45
-    } else {
-     if ( (hour >= 15 && minutes >= 45) && (hour    }
-    */
+  byte local_click = LOW;
+  do {
+    local_click = digitalRead(button);
+  } while ((futureMilis > millis()));
 
+  if (local_click == 0) {
 
-    // start relay and start water
-
-    // go idle and check time each 8 seconds..
-
-    // shut down water and relay
-    run_program = false;
+    blink_warn_led();
+    blink_warn_led();
+  } else {
+    digitalWrite(13, HIGH);
+    delay(3000);
+    digitalWrite(13, LOW);
   }
 }
