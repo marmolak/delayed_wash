@@ -41,8 +41,8 @@ void go_idle()
   power_all_disable ();   // turn off all modules
   set_sleep_mode (SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
   sleep_enable();
+  EIFR |= (1 << INTF0);
   attachInterrupt(0, run_program_impl, FALLING);
-  EIFR |= (1 << INTF0); //clear this interrupt
   interrupts ();
 
   sleep_cpu ();            // now goes to Sleep and waits for the interrupt
@@ -68,8 +68,9 @@ void set_idle_watchdog(void (*intr_routine)(void))
   sleep_enable();
 
   if (intr_routine != NULL) {
-    attachInterrupt(0, intr_routine, FALLING);
     EIFR |= (1 << INTF0);
+    attachInterrupt(0, intr_routine, FALLING);
+
   }
   interrupts ();
   sleep_cpu ();            // now goes to Sleep and waits for the interrupt
