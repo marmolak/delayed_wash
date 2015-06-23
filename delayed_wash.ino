@@ -3,6 +3,9 @@
 #include <avr/power.h>
 #include <SoftwareSerial.h>
 
+#define SECOND 1000
+#define MINUTE (SECOND * 60)
+
 static const byte button = 2;
 static const byte warn_led = 13;
 
@@ -105,15 +108,22 @@ void loop() {
     return;
   }
 
-  go_idle();
+  // don't go idle now. Wait for pulse by X minutes.
+  if (pulseIn(button, LOW, MINUTE * 5) == 0) {
+     go_idle();
+  }
 
   // Wait for 5 seconds
-  unsigned long futureMilis = millis() + (1000 * 5);
+  // TODO: FIX this nasty overflow and also check for 
+  // milis() turnaround
+  unsigned long futureMilis = millis() + (SECOND * 5);
 
-  byte local_click = LOW;
+  byte local_click;
   do {
     local_click = digitalRead(button);
   } while ((futureMilis > millis()));
+
+
 
   if (local_click == 0) {
 
